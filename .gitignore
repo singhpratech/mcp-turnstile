@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.egg-info/
+report/token_tax.json
+.turnstile-pins.json
+
+# internal working notes — not part of the product
+report/ADVERSARIAL-FINDINGS.md
+report/SEP-DRAFT-tool-integrity.md
