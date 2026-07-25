@@ -1,0 +1,26 @@
+{
+  "name": "mcp-turnstile",
+  "version": "0.1.0",
+  "description": "Scan any MCP server: a token-cost + metadata-safety report card at the tools/list boundary.",
+  "type": "module",
+  "bin": {
+    "mcpturn": "dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["mcp", "model-context-protocol", "security", "llm", "tokens", "unicode", "cli"],
+  "license": "MIT",
+  "author": "singhpratech",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.0.0"
+  }
+}

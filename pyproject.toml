@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-turnstile"
+version = "0.1.0"
+description = "Scan any MCP server: a token-cost + metadata-safety report card at the tools/list boundary."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "singhpratech" }]
+keywords = ["mcp", "model-context-protocol", "security", "llm", "tokens", "unicode"]
+dependencies = []
+
+[project.optional-dependencies]
+exact = ["tiktoken"]   # optional: exact cl100k token counts instead of the stdlib heuristic
+
+[project.urls]
+Homepage = "https://github.com/singhpratech/mcp-turnstile"
+Issues = "https://github.com/singhpratech/mcp-turnstile/issues"
+
+[project.scripts]
+mcpturn = "mcpturn.__main__:main"
+turnstile = "mcpturn.__main__:main"
+mcp-turnstile = "mcpturn.__main__:main"
+
+[tool.setuptools]
+packages = ["mcpturn", "harness", "defenses"]
