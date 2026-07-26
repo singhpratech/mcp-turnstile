@@ -78,6 +78,7 @@ main{position:relative; z-index:1}
 .hero h1{font-size:clamp(2.4rem,6.6vw,5rem); font-weight:700; max-width:15ch}
 .hero h1 .hl{color:var(--amber)}
 .hero h1 .through{position:relative; white-space:nowrap}
+@media(max-width:420px){.hero h1 .through{white-space:normal}}
 .hero .lede{font-size:clamp(1.06rem,2.1vw,1.36rem); color:var(--muted); max-width:50ch; margin-top:24px}
 .hero .lede b{color:var(--text); font-weight:600}
 .cta{display:flex; gap:13px; flex-wrap:wrap; margin-top:34px}
@@ -247,7 +248,8 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
       <a href="#truth" class="hidesm">the truth</a>
       <a href="#reveal" class="hidesm">reveal</a>
       <a href="#lie" class="hidesm">5 lies</a>
-      <a href="#reproduce">run it</a>
+      <a href="#reproduce" class="hidesm">run it</a>
+      <a href="about.html">about</a>
       <button class="tbtn" id="themeBtn" aria-label="Toggle light and dark theme">◐ theme</button>
     </nav>
   </div>
@@ -265,7 +267,7 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
         <div class="cta">
           <a class="btn primary" href="#reveal">▸ reveal a hidden payload</a>
           <a class="btn" href="#truth">read the story</a>
-          <a class="btn" href="https://github.com" id="repoTop">the repo →</a>
+          <a class="btn" href="https://github.com/singhpratech/mcp-turnstile" id="repoTop">the repo →</a>
         </div>
       </div>
       <div class="heroart" aria-hidden="true">
@@ -440,7 +442,7 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
       <p>Every number here comes from a harness you can run in under a minute — Python 3.10+, standard library only, all servers local. No network access.</p>
     </div>
     <pre class="rise"><span class="c"># clone and run the full report card</span>
-git clone https://github.com/&lt;you&gt;/mcp-turnstile && cd mcp-turnstile
+git clone https://github.com/singhpratech/mcp-turnstile && cd mcp-turnstile
 <span class="p">./run.sh</span>
 
 <span class="c"># or one lens at a time</span>
@@ -456,9 +458,9 @@ python3 -m bench.progressive_demo <span class="c"># both fixes at one gate</span
 <footer>
   <div class="wrap">
     <div class="flinks">
-      <a href="https://github.com" id="repoFoot">▸ github repo</a>
-      <a href="https://github.com" id="benchLink">benchmark writeup</a>
-      <a href="https://github.com" id="gapLink">gap analysis</a>
+      <a href="https://github.com/singhpratech/mcp-turnstile" id="repoFoot">▸ github repo</a>
+      <a href="https://github.com/singhpratech/mcp-turnstile/blob/main/report/BENCHMARK.md" id="benchLink">benchmark writeup</a>
+      <a href="https://github.com/singhpratech/mcp-turnstile/blob/main/report/GAP_ANALYSIS.md" id="gapLink">gap analysis</a>
       <a href="#reveal">the reveal demo</a>
     </div>
     <div class="fine">
@@ -481,7 +483,7 @@ python3 -m bench.progressive_demo <span class="c"># both fixes at one gate</span
   });
 
   /* set your repo URL here — fills every repo link */
-  var REPO = "https://github.com/";
+  var REPO = "https://github.com/singhpratech/mcp-turnstile/";
   var BENCH = REPO + "blob/main/report/BENCHMARK.md", GAP = REPO + "blob/main/report/GAP_ANALYSIS.md";
   [["repoTop",REPO],["repoFoot",REPO],["benchLink",BENCH],["gapLink",GAP]].forEach(function(p){
     var a=document.getElementById(p[0]); if(a) a.href=p[1]; });

@@ -177,6 +177,7 @@ report/GAP_ANALYSIS.md      spec-mapped gap analysis with sources
 mcpturn/                    the Python CLI product (scan any MCP server)
 ts/                         the TypeScript/Node CLI (same tool, npm-installable)
 docs/index.html             the project site (GitHub Pages)
+docs/about.html             the story + roadmap + live demos (GitHub Pages)
 ```
 
 ## Scope / ethics
