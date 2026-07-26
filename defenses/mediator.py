@@ -47,6 +47,7 @@ from typing import Any
 
 # --- invisible / format-control Unicode ------------------------------------
 TAG_LO, TAG_HI = 0xE0000, 0xE007F
+TAG_TERM = 0xE007F           # CANCEL TAG — terminates a subdivision-flag sequence
 WAVING_BLACK_FLAG = 0x1F3F4  # base for subdivision-flag emoji sequences
 ZWJ = 0x200D                 # legitimate inside emoji sequences
 ZWNJ = 0x200C                # legitimate in Persian/Indic scripts
@@ -60,28 +61,48 @@ def _is_emoji(cp: int) -> bool:
     return cp >= 0x1F000 or 0x2600 <= cp <= 0x27BF or cp in (0x203C, 0x2049)
 
 
+def _valid_flag_tagchar(o: int) -> bool:
+    """Region tag chars used in an emoji subdivision flag: tag digits (E0030–E0039)
+    and tag lowercase letters (E0061–E007A)."""
+    return 0xE0030 <= o <= 0xE0039 or 0xE0061 <= o <= 0xE007A
+
+
 def _tag_is_flag(text: str, i: int) -> bool:
-    """A TAG codepoint at i is legitimate iff it belongs to a flag sequence:
-    a run of TAG chars immediately preceded by U+1F3F4."""
+    """A TAG codepoint at i is legitimate iff it is part of a WELL-FORMED emoji
+    subdivision-flag sequence: base U+1F3F4, then 1..6 region tag chars, then the
+    U+E007F terminator. A payload appended after a flag (extra or non-region tag
+    chars, or anything past the terminator) is NOT waved through."""
     j = i - 1
     while j >= 0 and TAG_LO <= ord(text[j]) <= TAG_HI:
         j -= 1
-    return j >= 0 and ord(text[j]) == WAVING_BLACK_FLAG
+    if j < 0 or ord(text[j]) != WAVING_BLACK_FLAG:
+        return False
+    k, cnt = j + 1, 0
+    while k < len(text) and _valid_flag_tagchar(ord(text[k])) and cnt < 6:
+        k += 1
+        cnt += 1
+    # legit positions: the region chars [j+1, k-1] and the terminator at k
+    return cnt >= 1 and k < len(text) and ord(text[k]) == TAG_TERM and i <= k
 
 
 def _zwj_in_emoji(text: str, i: int) -> bool:
-    """A ZWJ at i is legitimate iff it joins two 'joinable' codepoints: two
-    pictographs (emoji sequence) OR two letters (e.g. a Devanagari/Indic conjunct
-    like क्‍ष). Only a ZWJ NOT between joinables (stray/among a run) is suspect."""
-    if i == 0 or i + 1 >= len(text):
-        return False
-
+    """A ZWJ at i is legitimate iff it joins 'joinable' codepoints: pictographs
+    (emoji sequence) or letters (e.g. a Devanagari/Indic conjunct like क्‍ष). A
+    ZWJ at a string boundary with a joinable neighbour is a truncated/concatenated
+    emoji sequence (still legitimate, not a payload). Only a ZWJ whose PRESENT
+    neighbour(s) are non-joinable — a stray ZWJ, or a run used as a bit alphabet —
+    is suspect."""
     def joinable(ch: str) -> bool:
         # letters (L*) and combining marks (M*, e.g. the Devanagari virama U+094D
         # that precedes a ZWJ in a legitimate conjunct) both count as joinable.
         return _is_emoji(ord(ch)) or unicodedata.category(ch)[0] in ("L", "M")
 
-    return joinable(text[i - 1]) and joinable(text[i + 1])
+    left = joinable(text[i - 1]) if i > 0 else None
+    right = joinable(text[i + 1]) if i + 1 < len(text) else None
+    present = [v for v in (left, right) if v is not None]
+    # lone ZWJ with no neighbours is not a join; otherwise legit iff every present
+    # neighbour is joinable.
+    return bool(present) and all(present)
 
 
 # --- tool-poisoning heuristics (report-card hints, NOT a boundary) ----------
@@ -110,6 +131,11 @@ class Finding:
 def classify_invisible(text: str) -> list[tuple[str, str, str]]:
     """Return (category, severity, detail) for each class of invisible codepoint
     present, distinguishing context-suspicious runs from legitimate i18n."""
+    # A lone ZWSP/WORD-JOINER/BOM is legitimate word-breaking in no-space scripts
+    # (Thai/Lao/Khmer/Burmese/Tibetan); only a run/dense cluster is a payload.
+    # Decide once, using the same authority as the forensics detector.
+    from defenses import unicode_forensics as _forensics
+    zw_stego = _forensics.zero_width_is_stego(text)
     seen: dict[str, tuple[str, str, str]] = {}
     for i, ch in enumerate(text):
         o = ord(ch)
@@ -126,7 +152,10 @@ def classify_invisible(text: str) -> list[tuple[str, str, str]]:
         elif o == ZWNJ:
             key = ("zwnj-i18n", "low", "zero-width non-joiner (legitimate in Persian/Indic)")
         elif o in ZERO_WIDTH_SUSPICIOUS:
-            key = ("zero-width", "high", f"suspicious zero-width codepoint U+{o:04X}")
+            if zw_stego:
+                key = ("zero-width", "high", f"zero-width binary payload (run/density) incl U+{o:04X}")
+            else:
+                key = ("zero-width-i18n", "low", f"isolated zero-width U+{o:04X} (word-break / joiner)")
         elif o in BIDI_CONTROLS:
             key = ("bidi-control-i18n", "low", "bidi format control (legitimate in Arabic/Hebrew)")
         else:
@@ -151,6 +180,8 @@ def normalize(text: str) -> str:
     normalization into a canonical hash is unsound (RFC 8785 forbids altering
     strings). Keep hygiene and hashing separate.
     """
+    from defenses import unicode_forensics as _forensics
+    zw_stego = _forensics.zero_width_is_stego(text)
     out = []
     for i, ch in enumerate(text):
         o = ord(ch)
@@ -158,7 +189,9 @@ def normalize(text: str) -> str:
             continue
         if o == ZWJ and not _zwj_in_emoji(text, i):
             continue
-        if o in ZERO_WIDTH_SUSPICIOUS:
+        # strip zero-width only when it's a concealed payload; preserve legitimate
+        # word-break/joiner use (Thai/Lao/Khmer/…) so we don't mangle real text.
+        if o in ZERO_WIDTH_SUSPICIOUS and zw_stego:
             continue
         out.append(ch)
     # NFC is applied for DISPLAY parity only; never feed this into a digest.

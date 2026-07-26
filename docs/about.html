@@ -321,17 +321,24 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
     <div class="thesis rise"><b>Both gaps share one address.</b> Because the token tax and the metadata-trust gap fall out of the same design decision, one mediator at the tools/list boundary closes both — and the security check rides in nearly free on the token savings everyone already wants.</div>
     <div class="scope">
       <div class="card rise">
-        <h3>Not new crypto — and we say so</h3>
+        <h3>No single leg is novel — and we say so</h3>
         <ul>
-          <li>Byte-pinning ships in <b>Invariant Labs' MCP-Scan</b> (Snyk)</li>
-          <li>Hidden-Unicode detection ships in <b>Microsoft's Agent Governance Toolkit</b></li>
-          <li><b>SEP-1766</b> holds the digest slot in the spec</li>
+          <li>Token-costing ships in <b>mcp-checkup</b></li>
+          <li>Deterministic hidden-Unicode detection is commodity — <b>Microsoft's Agent Governance Toolkit</b>, <b>Cisco's YARA rules</b>; false-positive tuning ships in Cisco's rules</li>
+          <li>Byte-pinning ships in <b>Invariant Labs' MCP-Scan</b> (Snyk); <b>SEP-1766</b> holds the digest slot in the spec</li>
         </ul>
-        <p>The contribution is (1) reproducible <b>measurement</b> and (2) the <b>combined</b> token + security report card at one boundary — which no existing tool ships. Credibility is the product.</p>
+        <p>The defensible contribution is the <b>compound</b>: (1) reproducible measurement; (2) static <code>tools/list</code> catalog token-pricing <b>and</b> metadata concealment audit in one offline, dependency-free pass — no tool we found does both at this boundary; (3) context-aware, i18n-honest concealment detection that is deterministic — no LLM, no network — verified at 0 false positives across ~40 scripts. The deterministic prior art trades coverage for false positives (stripping codepoints — false-positiving on real Persian, Thai, Indic, emoji — or setting blunt count thresholds); LLM/neural approaches add latency and a network call. This uses grapheme/script context and does neither. Credibility is the product.</p>
       </div>
       <div class="card rise">
         <h3>Honest boundary</h3>
         <p><b>mcpturn reports and grades — it does not block or intercept.</b> Findings are signals for review and CI, not a security boundary. A flag is a reason for a human to look, not a verdict either way.</p>
+        <p>The injection/exfil regex signals are deliberately noisy hints — a benign "read a file" tool can match — and sit apart from the Unicode detector; the 0-false-positive result covers the concealment detector only. Documented residuals:</p>
+        <ul>
+          <li>Wholly-non-Latin homoglyph word spoofs (an all-Cyrillic, Cherokee, or Lisu word that spells a Latin word) — needs the full UTS-39 fold table; likewise a Latin word carrying Armenian confusables (Armenian agglutinates onto Latin brand words, so flagging it would false-positive on real text)</li>
+          <li>Latin-block / visibly-distinct look-alikes (script-ɡ U+0261, dotless-ı, fullwidth, small-caps, math-alphanumerics) — outside the invisible approval-view threat model: a human can see them</li>
+          <li>Bidi embeddings and isolates (LRE/RLE, LRI/RLI/FSI, RLM/LRM) — legitimate in RTL text and W3C/ICU interpolation, so only the RLO/LRO overrides of the classic Trojan-Source PoCs are flagged</li>
+          <li>A zero-width payload spread as strictly isolated singletons AND padded below 30% density — which bloats the text to several times the payload length</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -373,7 +380,7 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
     </div>
 
     <h3 class="demoh rise"><span class="dk">demo B</span>Reveal the invisible.</h3>
-    <p class="demolede rise">A real tool description with a payload concealed in the invisible Unicode TAG block (U+E0000–E007F). You see plain text; the model receives a hidden instruction. Press the button — the page decodes it live, right in your browser.</p>
+    <p class="demolede rise">A real tool description with a payload concealed in the invisible Unicode TAG block (U+E0000–E007F). You see plain text; the model receives a hidden instruction. Press the button — the page decodes it live, right in your browser. The scanner's own check is deterministic: pure stdlib, no LLM, no network call.</p>
     <div class="reveal rise">
       <div class="rhead"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
         <span class="grow">tools/list · get_issue · malicious-conceal@6.6.6</span></div>
@@ -408,7 +415,8 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
         <div class="titems">
           <div class="titem"><p><b>The harness proves both gaps.</b> Pure-stdlib and reproducible — every number regenerates from one command.</p><span class="pill caught">shipped</span></div>
           <div class="titem"><p><b>The <code>mcpturn</code> CLI scans any MCP server</b> — stdio and HTTP transports.</p><span class="pill caught">shipped</span></div>
-          <div class="titem"><p><b>Python and TypeScript at exact parity.</b> Same tokens, same ratios, two implementations.</p><span class="pill caught">shipped</span></div>
+          <div class="titem"><p><b>Python and TypeScript at parity.</b> Same tokens, same ratios, and verdict-identical across the 35-string corpus and the 139-string battery (the two runtimes' Unicode tables can differ only for code points newer than the host Python's UCD).</p><span class="pill caught">shipped</span></div>
+          <div class="titem"><p><b>Concealment detector hardened and verified i18n-honest.</b> 0 false positives on a 35-string legitimate corpus and on the 98 legitimate strings of a 139-string adversarial battery (~40 scripts/mechanisms); 5/5 core techniques and 27/41 evasion variants caught — deterministic, no LLM, no network.</p><span class="pill caught">verified</span></div>
           <div class="titem"><p><b>Four ways to run:</b> single-file <code>.pyz</code>, pip, <code>python -m mcpturn</code>, Docker — plus npm.</p><span class="pill caught">shipped</span></div>
           <div class="titem"><p><b>Release v0.1.0 is live</b> and PR #1 is open.</p><span class="pill caught">shipped</span></div>
         </div>
@@ -417,7 +425,7 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
         <div class="tghead"><span class="tgtag">next</span>in progress · near-term</div>
         <div class="titems">
           <div class="titem"><p><b>Merge PR #1 → main</b> and switch on GitHub Pages.</p><span class="pill vis">in progress</span></div>
-          <div class="titem"><p><b>Open a PR adding mcp-turnstile to the security section</b> of the community awesome-mcp-servers lists — where MCP-Scan is listed.</p><span class="pill vis">in progress</span></div>
+          <div class="titem"><p><b>Open a PR adding mcp-turnstile to the security section</b> of the community awesome-mcp-servers lists — where Invariant's MCP-Scan is listed. That's the honest fast path to the ecosystem.</p><span class="pill vis">in progress</span></div>
         </div>
       </div>
       <div class="tlgroup later rise">
@@ -461,8 +469,13 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
       </div>
       <div class="rrow">
         <span class="rkey">parity</span>
-        <span class="rval">Python + TypeScript/Node at exact token parity <span class="dim">— 72-tool minimal floor 5,075 tokens · 6.64× ratio in both</span></span>
+        <span class="rval">Python + TypeScript/Node at parity — tokens, and verdict-identical on the corpus + adversarial battery <span class="dim">— 72-tool minimal floor 5,075 tokens · 6.64× ratio in both</span></span>
         <span class="pill caught">shipped</span>
+      </div>
+      <div class="rrow">
+        <span class="rkey">detector</span>
+        <span class="rval">Unicode concealment detector — deterministic, no LLM, no network <span class="dim">· 0 false positives on the 35-string legit corpus and the 98 legit strings of the 139-string adversarial battery · 5/5 core techniques · 27/41 evasion variants</span></span>
+        <span class="pill caught">verified</span>
       </div>
     </div>
   </div>

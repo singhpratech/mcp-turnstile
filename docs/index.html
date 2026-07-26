@@ -331,7 +331,7 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
     <div class="sec-head rise">
       <span class="eyebrow">watch it happen</span>
       <h2>This description looks clean. It isn't.</h2>
-      <p>A real tool description with a payload concealed in the invisible Unicode TAG block (U+E0000–E007F). You see plain text; the model receives a hidden instruction. Press the button — the page decodes it live, right in your browser.</p>
+      <p>A real tool description with a payload concealed in the invisible Unicode TAG block (U+E0000–E007F). You see plain text; the model receives a hidden instruction. Press the button — the page decodes it live, right in your browser. The scanner's own check is deterministic: pure stdlib, no LLM, no network call.</p>
     </div>
 
     <div class="reveal rise">
@@ -360,21 +360,26 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
     <div class="sec-head rise">
       <span class="eyebrow">the forensics lab</span>
       <h2>Five ways to lie in a tool description.</h2>
-      <p>Each one abuses a Unicode mechanism that is <em>also legitimate somewhere</em> — so you can't just ban the characters. The detector reads context, catches all five, and leaves real languages alone.</p>
+      <p>Each one abuses a Unicode mechanism that is <em>also legitimate somewhere</em> — so you can't just ban the characters. The detector reads context instead: 5/5 core techniques caught, 27/41 evasion variants built to slip past them caught too — deterministically. No LLM, no network, pure stdlib, and it leaves real languages alone.</p>
     </div>
     <div class="techgrid" id="techGrid"></div>
 
     <div class="i18n rise">
       <h3>…and it flags none of these.</h3>
-      <p>Every string below uses the exact mechanisms above — legitimately. Ban the codepoints and you break all of them. The detector high-flags zero.</p>
+      <p>Every string below uses the exact mechanisms above — legitimately. Ban the codepoints and you break all of them. Verified: <b>0 false positives</b> on a 35-string legitimate corpus, and 0 on the 98 legitimate strings inside a 139-string adversarial battery — roughly 40 scripts and mechanisms, from Persian ZWNJ to Mongolian FVS to CJK ideographic variation sequences.</p>
       <div class="chips">
         <span class="chip"><span class="g">فا</span> Persian ZWNJ <span class="ok">✓</span></span>
         <span class="chip"><span class="g">ع</span> Arabic isolate <span class="ok">✓</span></span>
         <span class="chip"><span class="g">हि</span> Hindi conjunct <span class="ok">✓</span></span>
+        <span class="chip"><span class="g">த்</span> Tamil conjunct <span class="ok">✓</span></span>
+        <span class="chip"><span class="g">ไทย</span> Thai word-break <span class="ok">✓</span></span>
         <span class="chip"><span class="g">👨‍👩‍👧</span> family emoji <span class="ok">✓</span></span>
         <span class="chip"><span class="g">🏴󠁧󠁢󠁳󠁣󠁴󠁿</span> Scotland flag <span class="ok">✓</span></span>
         <span class="chip"><span class="g">❤️</span> VS-16 heart <span class="ok">✓</span></span>
+        <span class="chip"><span class="g">1️⃣</span> keycap <span class="ok">✓</span></span>
         <span class="chip"><span class="g">👋🏽</span> skin tone <span class="ok">✓</span></span>
+        <span class="chip"><span class="g">ᏣᎳᎩ</span> Cherokee <span class="ok">✓</span></span>
+        <span class="chip">Mongolian FVS <span class="ok">✓</span></span>
         <span class="chip">10μs <span class="ok">✓</span></span>
         <span class="chip">GitHub-репозиторий <span class="ok">✓</span></span>
       </div>
@@ -412,21 +417,22 @@ footer .fine{font-family:var(--mono); font-size:.72rem; color:var(--faint); marg
     </div>
     <div class="scope">
       <div class="card rise">
-        <h3>Prior art — not novel crypto</h3>
+        <h3>Prior art — no single leg is novel</h3>
         <ul>
-          <li>Rug-pull byte-pinning ships in <b>Invariant Labs MCP-Scan</b> (Snyk)</li>
-          <li>Hidden-Unicode detection ships in <b>Microsoft's Agent Governance Toolkit</b></li>
-          <li><b>SEP-1766</b> already holds the digest/versioning slot in the spec</li>
+          <li>Token-costing ships in <b>mcp-checkup</b></li>
+          <li>Deterministic hidden-Unicode detection is commodity — <b>Microsoft's Agent Governance Toolkit</b>, <b>Cisco's YARA rules</b>; false-positive tuning ships in Cisco's rules</li>
+          <li>Rug-pull byte-pinning ships in <b>Invariant Labs MCP-Scan</b> (Snyk); <b>SEP-1766</b> already holds the digest/versioning slot in the spec</li>
         </ul>
-        <p>The contribution is <b>measurement</b> and the <b>combined</b> token-and-safety report card at one boundary — which nobody else ships.</p>
+        <p>The contribution is the <b>compound</b>: reproducible measurement, plus static <code>tools/list</code> catalog token-pricing <b>and</b> concealment audit in one offline, dependency-free pass — no tool we found does both at this boundary — plus context-aware detection that stays i18n-honest: the deterministic prior art trades coverage for false positives (stripping codepoints, blunt thresholds), and LLM approaches add latency and a network call. This uses grapheme/script context and does neither.</p>
       </div>
       <div class="card rise">
         <h3>Stated limitations</h3>
         <ul>
           <li>Token counts are a <b>floor</b> by default (stdlib heuristic under-counts; optional <code>tiktoken</code> gives exact counts)</li>
           <li>Byte-pinning is <b>trust-on-first-use</b> — no defense against first-contact poisoning or <code>$ref</code> referents</li>
-          <li>Injection/exfil signals are hints, <b>not a security boundary</b></li>
-          <li>Sub-byte leaks and wholly-non-Latin spoofs are documented blind spots</li>
+          <li>It <b>reports and grades — it does not block or intercept</b>; findings are signals for review and CI, not a security boundary</li>
+          <li>Injection/exfil regex signals are deliberately noisy <b>hints</b> — a benign "read a file" tool can match — and are separate from the Unicode detector; the 0-false-positive result covers concealment detection only</li>
+          <li>Documented residuals: wholly-non-Latin homoglyph word spoofs (need the full UTS&nbsp;#39 fold table), and Latin words carrying Armenian confusables (Armenian agglutinates onto Latin brand words); Latin-block / visibly-distinct look-alikes (script-ɡ, dotless-ı, fullwidth, small-caps — a human can see them); bidi embeddings and isolates (only the RLO/LRO overrides of the classic Trojan-Source PoCs are flagged); and a zero-width payload spread as strictly isolated singletons padded below 30% density</li>
         </ul>
       </div>
     </div>
@@ -448,7 +454,7 @@ git clone https://github.com/singhpratech/mcp-turnstile && cd mcp-turnstile
 <span class="c"># or one lens at a time</span>
 python3 -m bench.token_tax        <span class="c"># the token tax</span>
 python3 -m bench.security_proof   <span class="c"># poisoning · concealment · rug-pull</span>
-python3 -m bench.concealment_lab  <span class="c"># 5 lies vs the i18n corpus</span>
+python3 -m bench.concealment_lab  <span class="c"># 5 lies vs the 35-string i18n corpus</span>
 python3 -m bench.progressive_demo <span class="c"># both fixes at one gate</span></pre>
     <p class="note">Zero required dependencies — the standard library counts tokens with a conservative heuristic, so the tax is a floor, never inflated. Installing <span style="color:var(--amber)">tiktoken</span> is optional and only swaps in exact cl100k counts.</p>
   </div>

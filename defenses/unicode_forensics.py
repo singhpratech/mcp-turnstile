@@ -11,8 +11,15 @@ The guiding rule (see attacks/i18n_corpus.py): NEVER high-flag a codepoint that
 is legitimately needed for a language or emoji. We distinguish attack from i18n
 by CONTEXT — runs, balance, adjacency, script mixing — not by the codepoint alone.
 
-Stdlib only. Approximations (e.g. "emoji" = a coarse pictographic range) are
-documented inline; a production build would use the full UTS #39 / UTS #51 data.
+Stdlib only. Detection keys off structural context, not codepoint identity: a
+single variation selector after a VISIBLE base is legitimate (a run, or singles
+orphaned onto invisible bases, is a byte chain); zero-width is a payload only as a
+run or a dense/repeating cluster, never as isolated word-breaks; bidi is flagged
+only on RLO/LRO overrides, not embeddings/isolates; homoglyph uses the
+Latin-targeting subset of UTS #39 plus the canonical Latin-look-alike scripts. A
+production build would consult the full UTS #39 / UTS #51 data tables (and would
+pin a Unicode version so two runtimes' category tables cannot differ); the curated
+sets here are documented inline and exercised by attacks/i18n_corpus.py.
 """
 
 from __future__ import annotations
@@ -21,24 +28,65 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-# Greek letters that are commonly legitimate as math symbols / units (μs, θ, Ω).
-GREEK_MATH = set("μθΩπλσΔαβγδεφψωτΦΣΠ")
+# Cyrillic/Greek codepoints that impersonate a Latin letter (the Latin-targeting
+# subset of the UTS #39 confusables). We flag a homoglyph spoof only when one of
+# THESE appears inside a Latin word — so genuine Greek math letters (η, ξ, β, μ,
+# λ, Ω, …) glued to Latin (e.g. "ηmax", "10μs") are NOT false-flagged, because
+# they do not look like Latin letters and so are absent from this set.
+LATIN_CONFUSABLES = {
+    # Cyrillic lowercase → Latin
+    0x0430, 0x0435, 0x043E, 0x0440, 0x0441, 0x0443, 0x0445, 0x0455, 0x0456,
+    0x0458, 0x0501, 0x0475, 0x04BB, 0x051B, 0x051D, 0x04CF,   # …һ ԛ ԝ ӏ
+    # Cyrillic uppercase → Latin
+    0x0410, 0x0412, 0x0415, 0x0417, 0x041A, 0x041C, 0x041D, 0x041E, 0x0420,
+    0x0421, 0x0422, 0x0423, 0x0425, 0x0405, 0x0406, 0x0408,
+    # Greek uppercase that look Latin, plus lowercase omicron/rho/lunate-sigma
+    0x0391, 0x0392, 0x0395, 0x0396, 0x0397, 0x0399, 0x039A, 0x039C, 0x039D,
+    0x039F, 0x03A1, 0x03A4, 0x03A5, 0x03A7, 0x03BF, 0x03F2,
+}
+
+# Whole scripts whose letters are canonical Latin look-alikes (Cherokee, Lisu,
+# Canadian Aboriginal Syllabics, Coptic, Vai, Deseret, Osage). Unlike Greek
+# (legit as math glued to Latin) and Armenian (agglutinates onto Latin brand
+# words), these have NO legitimate mixed-with-Latin use inside a single token, so
+# ANY such letter in a Latin word is a spoof.
+def _is_confusable_script(o: int) -> bool:
+    # NB: Armenian is deliberately excluded — it agglutinates case suffixes
+    # directly onto Latin brand/loan words (e.g. "Googleում"), so treating its
+    # letters as spoofs would false-positive on legitimate Armenian text.
+    return (0x13A0 <= o <= 0x13FF or 0xAB70 <= o <= 0xABBF        # Cherokee
+            or 0xA4D0 <= o <= 0xA4FF                              # Lisu
+            or 0x1400 <= o <= 0x167F or 0x18B0 <= o <= 0x18FF     # Canadian syllabics
+            or 0x2C80 <= o <= 0x2CFF                              # Coptic
+            or 0xA500 <= o <= 0xA63F                              # Vai
+            or 0x10400 <= o <= 0x1044F or 0x104B0 <= o <= 0x104FF)  # Deseret, Osage
+
 
 # --- codepoint sets --------------------------------------------------------
 TAG_LO, TAG_HI = 0xE0000, 0xE007F
+TAG_TERM = 0xE007F                                 # CANCEL TAG — terminates a flag
 WAVING_FLAG = 0x1F3F4
 ZWJ, ZWNJ = 0x200D, 0x200C
-ZW_STEG = {0x200B, 0x2060, 0xFEFF}                 # abused for zero-width binary
-BIDI_OVERRIDE = {0x202A, 0x202B, 0x202C, 0x202D, 0x202E}  # LRE RLE PDF LRO RLO
+# zero-advance / invisible-format codepoints abused for zero-width binary. Beyond
+# the classic trio we include Hangul fillers, invisible math operators, and the
+# Mongolian vowel separator so an attacker cannot switch to an off-list alphabet.
+ZW_STEG = ({0x200B, 0x2060, 0xFEFF, 0x115F, 0x1160, 0x3164, 0xFFA0,
+            0x2061, 0x2062, 0x2063, 0x2064, 0x180E, 0x00AD}
+           | set(range(0x1D173, 0x1D17B)))   # + soft-hyphen and musical-beam format controls
+BIDI_OVERRIDE = {0x202A, 0x202B, 0x202C, 0x202D, 0x202E}  # LRE RLE PDF LRO RLO (all dropped on sanitize)
+BIDI_STRONG_OVERRIDE = {0x202D, 0x202E}            # LRO / RLO — reorder even in RTL context
+BIDI_EMBED = {0x202A, 0x202B}                      # LRE / RLE — legit only amid real RTL text
 BIDI_ISOLATE = {0x2066, 0x2067, 0x2068, 0x2069}    # LRI RLI FSI PDI
 VS_LO1, VS_HI1 = 0xFE00, 0xFE0F                    # variation selectors
 VS_LO2, VS_HI2 = 0xE0100, 0xE01EF                  # variation selectors supplement
+FVS_LO, FVS_HI = 0x180B, 0x180D                    # Mongolian free variation selectors
 _RLO, _LRO, _PDF = chr(0x202E), chr(0x202D), chr(0x202C)  # named, not literal, controls
 
 
-def _is_pictographic(cp: int) -> bool:
-    """Coarse Extended_Pictographic approximation."""
-    return cp >= 0x1F000 or 0x2600 <= cp <= 0x27BF or cp in (0x203C, 0x2049, 0x2764)
+def _valid_flag_tagchar(o: int) -> bool:
+    """Tag chars legitimately used in an emoji subdivision-flag region code:
+    tag digits (U+E0030–E0039) and tag lowercase letters (U+E0061–E007A)."""
+    return 0xE0030 <= o <= 0xE0039 or 0xE0061 <= o <= 0xE007A
 
 
 def _script(ch: str) -> str:
@@ -80,64 +128,114 @@ class Report:
 
 # --- per-technique detectors ----------------------------------------------
 def _detect_tag(text: str) -> Finding | None:
-    # single forward pass (O(n)): track whether the char before the current TAG
-    # run was a base flag emoji, so a whole run is classified once.
-    run, legit = 0, 0
-    prev_was_flag = False
-    in_tag = False
-    for ch in text:
-        o = ord(ch)
-        if TAG_LO <= o <= TAG_HI:
-            if not in_tag:
-                in_tag = True  # start of a run; prev_was_flag already set below
-            if prev_was_flag:
-                legit += 1
-            else:
-                run += 1
+    # A legitimate subdivision-flag emoji is EXACTLY: base U+1F3F4, then 1..6
+    # region tag chars (tag digits / lowercase), then the U+E007F terminator.
+    # We validate that shape, so a payload appended after a flag emoji — extra
+    # tag chars, non-region chars, or anything past the terminator — is counted
+    # as a standalone concealed run, not waved through as "part of a flag".
+    standalone, legit = 0, 0
+    i, n = 0, len(text)
+    while i < n:
+        o = ord(text[i])
+        if o == WAVING_FLAG:
+            j, k = i + 1, 0
+            while j < n and _valid_flag_tagchar(ord(text[j])) and k < 6:
+                j += 1
+                k += 1
+            if k >= 1 and j < n and ord(text[j]) == TAG_TERM:
+                legit += k          # well-formed flag: base + region + terminator
+                i = j + 1
+                continue
+            i += 1                  # lone/malformed flag base — following TAGs are standalone
+        elif TAG_LO <= o <= TAG_HI:
+            standalone += 1
+            i += 1
         else:
-            in_tag = False
-            prev_was_flag = (o == WAVING_FLAG)
-    if run:
+            i += 1
+    if standalone:
         return Finding("TAG-block mirror", "high",
-                       f"{run} standalone TAG codepoints (not part of a flag emoji)",
-                       hidden_bytes=run)
+                       f"{standalone} standalone TAG codepoints (not a valid flag sequence)",
+                       hidden_bytes=standalone)
     if legit:
         return Finding("TAG-block (flag emoji)", "low",
                        f"{legit} TAG codepoints inside a valid flag sequence")
     return None
 
 
+def zero_width_is_stego(text: str) -> bool:
+    """True when zero-width (ZWSP / WORD-JOINER / BOM) usage looks like a binary
+    payload rather than legitimate word-breaking or no-break joining.
+
+    The distinguisher is CONTEXT, not the codepoint:
+      * a consecutive RUN of >=3 zero-width controls — no legitimate tool
+        metadata stacks even three (the densest legit case, Hangul isolated-jamo
+        display, uses at most two adjacent fillers), so a run of 3+ is a packed
+        bit-string; OR
+      * >=16 total that ALSO show run structure (a run of >=2) — a payload
+        chunked into pairs/triples to dodge the run test still repeats; OR
+      * >=16 total at high density among the visible-printable text — a payload
+        interleaved with other invisibles to break runs still reads dense, because
+        the density denominator counts only printable (non-C/M) characters.
+    Legitimate word/line-break use in no-space scripts (Thai, Lao, Khmer, Burmese,
+    Tibetan, short-token CJK) is ISOLATED singletons between real words — max run
+    1, low density — so no branch fires. (Documented residual: a payload spread as
+    strictly isolated singletons AND diluted below 30% density evades — but that
+    requires padding the text to several times the payload length, which is
+    conspicuous by sheer length.)
+    """
+    total = max_run = run = printable = 0
+    for ch in text:
+        o = ord(ch)
+        if o in ZW_STEG:
+            run += 1
+            total += 1
+            if run > max_run:
+                max_run = run
+        else:
+            run = 0
+            # count only printable text toward density; other format/control/
+            # combining codepoints must not act as payload-diluting "filler".
+            if unicodedata.category(ch)[0] not in ("C", "M"):
+                printable += 1
+    if max_run >= 3:
+        return True
+    return total >= 16 and (max_run >= 2 or total / (total + printable) >= 0.30)
+
+
 def _detect_zwbin(text: str) -> Finding | None:
-    # TOTAL steg zero-width codepoints is the signal (>=8 ~= 1 smuggled byte).
-    # We track the total, not just the longest run, so an attacker can't evade by
-    # chunking the payload with a normal char every few bits.
-    best = cur = total = 0
+    total = max_run = run = 0
     for ch in text:
         if ord(ch) in ZW_STEG:
-            cur += 1
+            run += 1
             total += 1
-            best = max(best, cur)
+            if run > max_run:
+                max_run = run
         else:
-            cur = 0
-    if total >= 8:
+            run = 0
+    if total == 0:
+        return None
+    if zero_width_is_stego(text):
         return Finding("Zero-width binary", "high",
-                       f"{total} zero-width steg codepoints (longest run {best}; ~{total // 8} bytes)",
-                       hidden_bytes=total // 8)
-    if total:
-        return Finding("Zero-width", "low", f"{total} isolated zero-width codepoint(s)")
-    return None
+                       f"{total} zero-width steg codepoints (longest run {max_run}; ~{total // 8} bytes)",
+                       hidden_bytes=max(1, total // 8))
+    return Finding("Zero-width", "low",
+                   f"{total} isolated zero-width codepoint(s) (word-break / joiner)")
 
 
 def _detect_bidi(text: str) -> Finding | None:
-    overrides = sum(1 for ch in text if ord(ch) in BIDI_OVERRIDE)
-    # overrides (RLO/LRO/RLE/LRE) inside otherwise-LTR text are the Trojan-Source
-    # signal; balanced isolates around real RTL script are legitimate (low).
-    if overrides:
-        # count how much text is *reordered* by the override
+    # Only RLO (U+202E) / LRO (U+202D) force CHARACTER-level reordering — the
+    # unambiguous Trojan-Source signal, flagged high in any context. LRE/RLE
+    # embeddings, the PDF terminator, and the isolate controls (LRI/RLI/FSI/PDI)
+    # are legitimate in mixed RTL/LTR text AND are the W3C/ICU-recommended way to
+    # wrap interpolated values in LTR strings, so they are reported low, not high.
+    # (Documented residual: an embedding/isolate-only reordering that carries no
+    # RLO/LRO is not high-flagged — the classic Trojan-Source PoCs use RLO/LRO.)
+    strong = sum(1 for ch in text if ord(ch) in BIDI_STRONG_OVERRIDE)
+    if strong:
         hidden = 0
         i = 0
         while i < len(text):
-            if ord(text[i]) in (0x202E, 0x202D):  # RLO / LRO
+            if ord(text[i]) in BIDI_STRONG_OVERRIDE:
                 j = text.find(_PDF, i + 1)
                 hidden += (j - i - 1) if j != -1 else (len(text) - i - 1)
                 i = j + 1 if j != -1 else len(text)
@@ -146,65 +244,122 @@ def _detect_bidi(text: str) -> Finding | None:
         # bidi hides NOTHING — it reorders display. hidden_bytes stays 0 so the
         # lab's capacity totals stay honest.
         return Finding("Bidi Trojan-Source", "high",
-                       f"{overrides} bidi override control(s); ~{hidden} chars display-reordered",
+                       f"{strong} directional-override control(s) (RLO/LRO); ~{hidden} chars display-reordered",
                        hidden_bytes=0)
-    isolates = sum(1 for ch in text if ord(ch) in BIDI_ISOLATE)
-    if isolates:
-        return Finding("Bidi isolate (i18n)", "low", f"{isolates} balanced isolate control(s)")
+    soft = sum(1 for ch in text if ord(ch) in BIDI_EMBED or ord(ch) in BIDI_ISOLATE)
+    if soft:
+        return Finding("Bidi embedding/isolate (i18n)", "low",
+                       f"{soft} bidi embedding/isolate control(s)")
     return None
+
+
+def _is_vs(o: int) -> bool:
+    # emoji/text presentation selectors, VS supplement (CJK IVS), and Mongolian
+    # free variation selectors — all "one-per-base" by design.
+    return (VS_LO1 <= o <= VS_HI1) or (VS_LO2 <= o <= VS_HI2) or (FVS_LO <= o <= FVS_HI)
 
 
 def _detect_vs(text: str) -> Finding | None:
-    chain = legit = 0
-    prev_pict = False
-    for ch in text:
-        o = ord(ch)
-        is_vs = (VS_LO1 <= o <= VS_HI1) or (VS_LO2 <= o <= VS_HI2)
-        if is_vs:
-            # one VS right after a pictographic/CJK base is legitimate presentation;
-            # a CHAIN, or VS after a plain letter, is smuggling.
-            if prev_pict and chain == 0:
-                legit += 1
+    # A base glyph takes at MOST one variation selector. So a single selector
+    # after a VISIBLE base is legitimate presentation regardless of what the base
+    # is — clearing keycaps (1️⃣), ©️/®️/™️, arrows, media symbols, CJK IVS, and a
+    # long list of legitimate emoji. Smuggling shows up two ways: a RUN of >=2
+    # consecutive selectors (a byte chain), or selectors spread one-per-base where
+    # the "base" is an invisible/control/space char or nothing (an ORPHAN selector
+    # — no glyph to modify). Legit text never orphans a selector.
+    chain_total = legit = orphan = run = 0
+    base: str | None = None  # last non-VS codepoint before the current run
+
+    def _close(run: int, base: str | None) -> None:
+        nonlocal chain_total, legit, orphan
+        if run == 1:
+            if base is None or unicodedata.category(base)[0] in ("C", "Z") or _is_vs(ord(base)):
+                orphan += 1
             else:
-                chain += 1
+                legit += 1
+        elif run >= 2:
+            chain_total += run
+
+    for ch in text:
+        if _is_vs(ord(ch)):
+            run += 1
         else:
-            prev_pict = _is_pictographic(o) or (0x3000 <= o <= 0x9FFF)
-            continue
-        prev_pict = False
-    if chain:
+            _close(run, base)
+            run = 0
+            base = ch
+    _close(run, base)
+
+    if chain_total or orphan >= 4:
+        total = chain_total + orphan
         return Finding("Variation-selector smuggling", "high",
-                       f"chain of {chain} variation selectors (~{chain} bytes)",
-                       hidden_bytes=chain)
+                       f"{total} smuggling variation selectors (chains {chain_total}, orphan singles {orphan}; ~{total} bytes)",
+                       hidden_bytes=max(1, total))
     if legit:
         return Finding("Variation selector (presentation)", "low",
-                       f"{legit} presentation variation selector(s)")
+                       f"{legit} single presentation/IVS selector(s)")
     return None
 
 
+# whitespace class shared with the TS port (explicit, NOT \s, whose members
+# differ across languages): ASCII WS + the Unicode space separators.
+_WS_SPLIT = "[ \t\n\r\f\v\u00a0]+"
+
+
 def _detect_homoglyph(text: str) -> Finding | None:
-    # Signal = a SINGLE word-piece mixing Latin with Cyrillic/Greek (the classic
-    # confusable spoof, e.g. "gеt_issue" with a Cyrillic 'е'). We split on
-    # separators so a legitimately bilingual token like "GitHub-репозиторий"
-    # (each side single-script) is NOT flagged, and we exempt Greek used as a
-    # math symbol / unit (e.g. "10μs", "θx"). NOTE (documented limitation): a
-    # WHOLLY non-Latin spoof like all-Cyrillic "ѕсоре" is not detected here,
-    # because a skeleton-to-ASCII heuristic would false-positive on real Cyrillic
-    # words — cross-catalog skeleton collision is the right place to catch that.
-    for raw in re.split(r"\s+", text):
+    # Signal = a Latin word that hides a Cyrillic/Greek character which IMPERSONATES
+    # a Latin letter (the classic confusable spoof, e.g. "gеt_issue" with a
+    # Cyrillic 'е'). We key off LATIN_CONFUSABLES — the Latin-look-alike subset of
+    # UTS #39 — instead of "any script mixing", so:
+    #   * "ηmax", "ξmin", "βcarotene", "10μs", "10kΩ" are clean (η/ξ/β/μ/Ω do not
+    #     look like Latin letters and so are not confusables);
+    #   * "GitHub-репозиторий" is clean (each side is single-script; the Cyrillic
+    #     token has no Latin letter to impersonate within it);
+    #   * a pure-Greek word like "Ελληνικά" is clean (no Latin letter in the token).
+    # NOTE (documented limitation): a WHOLLY non-Latin spoof like all-Cyrillic
+    # "ѕсоре" is out of scope here — cross-catalog skeleton collision is the right
+    # place to catch that without false-positiving on real Cyrillic words.
+    # explicit whitespace class (NOT \s) so Python and the TS port tokenise
+    # identically — their \s disagree on U+FEFF, U+0085, and U+001C–U+001F.
+    for raw in re.split(_WS_SPLIT, text):
         for token in re.split(r"[-_/.]", raw):
             if not token:
                 continue
-            has_digit = any(c.isdigit() for c in token)
-            scripts = set()
-            for ch in token:
-                s = _script(ch)
-                if s == "Greek" and (has_digit or ch in GREEK_MATH):
-                    continue  # math/unit Greek — legitimate
-                if s in ("Latin", "Cyrillic", "Greek"):
-                    scripts.add(s)
-            if len(scripts) >= 2:
+            has_latin = any(_script(ch) == "Latin" for ch in token)
+            confusables = [ch for ch in token
+                           if ord(ch) in LATIN_CONFUSABLES or _is_confusable_script(ord(ch))]
+            if has_latin and confusables:
                 return Finding("Homoglyph spoof", "high",
-                               f"token mixes scripts within one word: {token!r}")
+                               f"Latin word contains a Latin-confusable character "
+                               f"U+{ord(confusables[0]):04X}: {token!r}")
+    return None
+
+
+def _joinable(ch: str) -> bool:
+    # letters, marks, AND numbers count: a ZWNJ between a digit and a suffix is a
+    # legitimate Persian/Urdu half-space (e.g. "۲‌نفره" = "2-person"), not steg.
+    o = ord(ch)
+    return (o >= 0x1F000 or 0x2600 <= o <= 0x27BF or o in (0x203C, 0x2049, 0x2764)
+            or unicodedata.category(ch)[0] in ("L", "M", "N"))
+
+
+def _detect_zwj_bin(text: str) -> Finding | None:
+    # ZWJ (U+200D) / ZWNJ (U+200C) are legitimate BETWEEN joinables — emoji
+    # sequences, Persian/Indic conjuncts — even at a truncated boundary. Used as a
+    # 0/1 bit alphabet they sit beside each other or non-joinables, i.e. "stray".
+    # Legit text has ~0 stray; a payload needs many, so we threshold the count.
+    stray = 0
+    n = len(text)
+    for i, ch in enumerate(text):
+        if ord(ch) in (ZWJ, ZWNJ):
+            left = _joinable(text[i - 1]) if i > 0 else None
+            right = _joinable(text[i + 1]) if i + 1 < n else None
+            present = [v for v in (left, right) if v is not None]
+            if not (present and all(present)):
+                stray += 1
+    if stray >= 4:
+        return Finding("Zero-width binary", "high",
+                       f"{stray} stray zero-width joiners used as a bit alphabet (~{stray // 8} bytes)",
+                       hidden_bytes=max(1, stray // 8))
     return None
 
 
@@ -254,7 +409,7 @@ def _sanitize(text: str) -> str:
 
 
 # --- public API ------------------------------------------------------------
-_DETECTORS = (_detect_tag, _detect_zwbin, _detect_bidi, _detect_vs, _detect_homoglyph)
+_DETECTORS = (_detect_tag, _detect_zwbin, _detect_zwj_bin, _detect_bidi, _detect_vs, _detect_homoglyph)
 
 
 def analyze(text: str) -> Report:

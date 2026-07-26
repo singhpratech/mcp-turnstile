@@ -98,16 +98,39 @@ and `bench/progressive_demo.py` each run standalone.
   uses a documented heuristic that *under*-counts, so the real tax is higher than
   reported. Install `tiktoken` for exact `cl100k_base` counts; the 6.6× ratio and
   the % figures hold either way.
-- **Not novel crypto, and not a hardened product.** Rug-pull byte-pinning is
-  already shipped by Invariant Labs' MCP-Scan (Snyk); hidden-Unicode detection
-  ships in Microsoft's Agent Governance Toolkit. mcp-turnstile's contribution is
-  **measurement** and the **combined token + security report card** at one
-  boundary — not a new security primitive.
+- **Not novel crypto, not any single check, and not a hardened boundary.**
+  Rug-pull byte-pinning ships in Invariant Labs' MCP-Scan (Snyk); deterministic
+  hidden-Unicode detection ships in Microsoft's Agent Governance Toolkit and
+  Cisco's YARA rules; token-costing ships in mcp-checkup. The defensible,
+  verified contribution is the *compound*: reproducible **measurement**, plus
+  **static `tools/list` catalog token-pricing and metadata concealment audit in
+  one offline, dependency-free pass** (no tool found does both at this boundary).
+  It reports and grades; it is not a new security primitive.
+- **i18n-honest concealment, deterministically.** The Unicode detector decides
+  attack-vs-legitimate by *context* (runs, counts, adjacency, base visibility,
+  the UTS #39 Latin-confusable subset), not codepoint identity — no LLM, no
+  network, and verdict-identical across the Python and TypeScript builds on the
+  corpus and adversarial battery (a pinned Unicode version would extend that to
+  every code point; today the two runtimes' category tables can differ only for
+  code points newer than the host Python's UCD). Verified at **0 false
+  positives** on a 35-string corpus and on all 98 legitimate strings of a
+  139-string adversarial battery across ~40 scripts and mechanisms, catching 5/5
+  core techniques (and 27/41 of the battery's evasion *variants*). Residuals (by
+  design): wholly-non-Latin homoglyph words (need the full UTS #39 fold table) and
+  Latin words carrying Armenian confusables (Armenian agglutinates onto Latin brand
+  words, so flagging would false-positive on real text);
+  Latin-block / visibly-distinct look-alikes (script-ɡ, dotless-ı, fullwidth,
+  small-caps, math-alphanumerics — a human can see them); bidi embeddings and
+  isolates (only the RLO/LRO overrides of the classic PoCs are flagged); and a
+  zero-width payload spread as strictly isolated singletons padded below 30%
+  density (which bloats the text conspicuously).
 - **Byte-pinning is TOFU.** It detects post-approval mutation, not first-contact
   poisoning, and it covers received bytes only — not the referents of a JSON
   Schema `$ref`.
-- **The injection/exfil signals are report-card hints, not a boundary.** A
-  motivated attacker rephrases around regexes; real defense is defense-in-depth.
+- **The injection/exfil signals are report-card hints, not a boundary**, and are
+  separate from the i18n-honest Unicode detector — deliberately noisy (a benign
+  "read a file" tool can match). A motivated attacker rephrases around regexes;
+  real defense is defense-in-depth.
 
 ## Sources
 

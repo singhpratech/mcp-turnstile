@@ -39,7 +39,7 @@ Four ways to run it — pick one:
 
 ```bash
 # 1. single file, zero install, zero dependencies (build once, ship anywhere)
-python3 build.py                     # -> dist/mcpturn.pyz  (~23 KB, one file)
+python3 build.py                     # -> dist/mcpturn.pyz  (~27 KB, one file)
 python3 dist/mcpturn.pyz scan --stdio -- npx -y @modelcontextprotocol/server-github
 
 # 2. install the command (also zero runtime dependencies)
@@ -110,11 +110,17 @@ runs **five** distinct concealment techniques against a benign description and
 shows human-view vs. model-view, the hidden byte-capacity, and the detector's
 verdict for each: TAG-block mirror, zero-width binary, bidi Trojan-Source,
 variation-selector smuggling, and homoglyph spoof. It then runs a legitimate
-**i18n corpus** (Persian ZWNJ, Arabic isolates, Hindi conjuncts, emoji ZWJ
-sequences, subdivision-flag emoji, presentation variation selectors) and
+**i18n corpus** of 35 strings across dozens of scripts and mechanisms (Persian
+ZWNJ, Arabic/Hebrew bidi embeddings, Indic conjuncts, emoji ZWJ sequences and
+professions, subdivision-flag emoji, keycap / ©®™ / arrow / media-button
+presentation selectors, CJK ideographic variation sequences, Thai/Lao/Khmer/CJK
+zero-width word-breaks, Mongolian FVS, Greek math letters glued to Latin) and
 confirms **0 false positives** — the whole point being that every attack channel
 abuses a mechanism that is *also* legitimate somewhere, so only context-aware
-detection works. Result: **5/5 caught, 0 i18n false positives**.
+detection works. Result: **5/5 caught, 0 i18n false positives**. The detector
+was hardened against an adversarial battery of 139 fresh strings (98 legit across
+~40 scripts + 41 evasions); see Limitations for the residuals that remain by
+design.
 
 **Progressive disclosure** (`bench/progressive_demo.py`) — the same
 `mediate_catalog()` call that flags metadata also feeds a `tool_search` /
@@ -132,11 +138,28 @@ Be clear-eyed — this is a crowded space:
   ("The Trustworthy MCP Registry"), and **SEP-1766** already occupies the
   digest/versioning slot in the spec pipeline.
 
-**mcp-turnstile's contribution is not new crypto.** It is (1) *measurement* — a
-reproducible token-tax + metadata-trust benchmark against the brand-new
-`2026-07-28` spec — and (2) the *combined* token + security report card at the
-`tools/list` boundary, which no existing tool ships. The full write-up and
-prior-art map are in **[`report/BENCHMARK.md`](report/BENCHMARK.md)**.
+**mcp-turnstile's contribution is not new crypto, and not any single check.**
+Every leg exists elsewhere: token-costing (mcp-checkup), deterministic
+hidden-Unicode detection (Microsoft's Agent Governance Toolkit, Cisco's YARA
+rules), and false-positive tuning (Cisco). The defensible, verified contribution
+is the *compound*:
+
+1. **Measurement** — a reproducible token-tax + metadata-trust benchmark against
+   the brand-new `2026-07-28` spec.
+2. **Static `tools/list` catalog pricing *and* metadata concealment audit in one
+   offline, dependency-free pass** — no tool found does both at this boundary.
+3. **Context-aware, i18n-honest concealment detection** — deterministic (no LLM,
+   no network), verified at **0 false positives** on a 35-string corpus and on all
+   98 legitimate strings of a 139-string adversarial battery spanning ~40 scripts
+   and mechanisms, while catching 5/5 core techniques. The deterministic prior art
+   trades coverage for false positives: some tools strip codepoints (flagging real
+   Persian/Thai/Indic/emoji) or set blunt count thresholds; others add an
+   LLM/neural arbitrator (slow, non-deterministic, network-bound). This uses
+   grapheme/script context instead — catching single-codepoint smuggling *and*
+   leaving real languages alone, offline.
+
+It **reports and grades** — it is not a blocking security boundary. The full
+write-up and prior-art map are in **[`report/BENCHMARK.md`](report/BENCHMARK.md)**.
 
 ## Limitations
 
@@ -144,18 +167,37 @@ prior-art map are in **[`report/BENCHMARK.md`](report/BENCHMARK.md)**.
 - **Byte-pinning is Trust-On-First-Use** — it detects post-approval mutation, not
   first-contact poisoning, and covers received bytes only, not JSON Schema `$ref`
   referents.
-- **Unicode handling respects i18n** — it flags context-suspicious invisible runs
-  (standalone TAG blocks, stray zero-width) but preserves legitimate ZWNJ, bidi
-  marks, emoji ZWJ, and subdivision-flag TAG sequences. Hygiene is display-layer,
+- **Unicode handling respects i18n** — detection keys off *context*, not
+  codepoint identity: a single variation selector after a *visible* base is
+  legitimate (a run, or singles orphaned onto invisible bases, is a byte chain);
+  zero-width is a payload only as a run of ≥3 or a ≥16 cluster, never as isolated
+  word-breaks; bidi is flagged on
+  RLO/LRO *overrides* (embeddings and isolates are treated as legitimate);
+  homoglyphs are flagged only via the Latin-targeting subset of UTS #39 plus the
+  canonical Latin-look-alike scripts. This is verified at 0 false positives on a
+  35-string corpus and on all 98 legitimate strings of a 139-string adversarial
+  battery, on both the Python and TypeScript engines. Hygiene is display-layer,
   never a hash input.
 - **The injection/exfil signals are report-card hints, not a security boundary.**
-  This is not a hardened security product.
-- **Concealment detection has known blind spots** (documented in
-  `bench/concealment_lab.py`): sub-byte zero-width leaks (<8 codepoints) stay
-  below high severity; a *wholly* non-Latin homoglyph spoof (e.g. all-Cyrillic
-  `ѕсоре`) is not caught per-string (a skeleton heuristic would false-positive on
-  real Cyrillic — cross-catalog skeleton collision is the right place for that);
-  and the bidi renderer is a simplified approximation of the Unicode BiDi
+  These regexes are deliberately noisy (a benign "read a file" tool can match)
+  and are separate from the i18n-honest Unicode detector above; they are hints
+  for review, and a motivated attacker rephrases around them.
+- **Concealment detection has documented residuals** (by design, not oversight):
+  a *wholly* non-Latin homoglyph word — all-Cyrillic `ѕсоре`, a Cherokee or Lisu
+  word spelling a Latin one — is not caught per-string (needs the full UTS #39
+  fold table + cross-catalog skeleton collision; a naive fold would false-positive
+  on real Cyrillic/Cherokee) — and a Latin word carrying *Armenian* confusables is
+  likewise left alone, since Armenian agglutinates case suffixes onto Latin brand
+  words; Latin-block or *visibly distinct* look-alikes
+  (script-`ɡ` U+0261, Turkish dotless-ı, fullwidth `ｇｅｔ`, small-caps,
+  math-alphanumerics) are out of the invisible "approval-view gap" threat model
+  because a human reviewer can see them; **bidi embeddings and isolates**
+  (LRE/RLE, LRI/RLI/FSI, and the RLM/LRM marks) are not high-flagged — they are
+  legitimate in RTL text and in W3C/ICU interpolation, so only the RLO/LRO
+  overrides that the classic Trojan-Source PoCs use are flagged; a zero-width
+  payload spread as *strictly isolated* singletons AND padded below 30% density
+  evades the count floor, but that bloats the text to several times the payload
+  length; and the bidi renderer is a simplified approximation of the Unicode BiDi
   algorithm.
 
 ## Layout
